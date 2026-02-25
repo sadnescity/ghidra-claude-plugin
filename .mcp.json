@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ghidra-mcp": {
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/brisma/GhidraMCP",
+        "ghidra-mcp-bridge"
+      ]
+    }
+  }
+}
