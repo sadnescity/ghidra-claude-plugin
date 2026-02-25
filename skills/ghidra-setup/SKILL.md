@@ -93,6 +93,61 @@ When multiple Ghidra CodeBrowser windows are open, each gets its own HTTP port:
 
 The bridge auto-discovers all active instances by scanning the port range every 30 seconds. If only one instance is running, it is automatically selected as the active target. Use `list_instances()` and `use_instance(port)` to manage multiple instances.
 
+## Base Address and Overlay Configuration
+
+Many binaries are loaded at a specific base address in memory (not 0x0). Ghidra needs to know this address for correct analysis — especially for resolving absolute pointers, cross-references, and call targets.
+
+### Setting the Base Address
+
+When importing a binary in Ghidra:
+
+1. **File > Import File** — select the binary
+2. In the import dialog, click **Options...**
+3. Set **Base Address** to the actual load address (e.g., `0x80010000` for a PSX executable, `0x10000000` for a MIPS firmware)
+4. Ghidra will rebase all addresses accordingly
+
+For already-imported programs: **Window > Memory Map > Set Image Base** (home icon).
+
+### Working with Overlays
+
+Overlays are code/data modules loaded dynamically at specific memory addresses. Common examples:
+- Game overlays loaded into a fixed RAM region
+- DLLs/shared libraries loaded at their preferred base
+- Firmware modules mapped at specific peripheral addresses
+
+**Strategy A — Separate CodeBrowser windows** (recommended for large overlays):
+- Import each overlay as a separate program with its correct base address
+- Use `list_instances()` and `use_instance(port)` to switch between them
+- Each overlay gets independent analysis
+
+**Strategy B — Single CodeBrowser window with multiple programs**:
+- Import all overlays into the same Ghidra project
+- Use `PROGRAM::address` prefix to target specific overlays in MCP tools
+- Listing tools show results from all programs simultaneously
+- Useful when you need to cross-reference between overlays frequently
+
+### Why Base Addresses Matter for MCP
+
+GhidraMCP addresses correspond to Ghidra's internal address space. If the base address is wrong:
+- `get_xrefs_to` won't find cross-references that use absolute addresses
+- `decompile_function_by_address` may target the wrong function
+- Struct/data annotations will be at incorrect offsets
+- Addresses from a runtime debugger won't match Ghidra addresses
+
+Always verify that Ghidra's base address matches the actual load address at runtime.
+
+### Importing RAM Dumps
+
+Instead of analyzing an executable file, you can import a raw memory dump captured from a running process or emulator. This captures the full runtime state including dynamically loaded code and patched memory.
+
+1. **File > Import File** — select the raw dump file
+2. Set **Format** to **Raw Binary**
+3. Select the correct **Language** (processor architecture and endianness)
+4. Set **Base Address** to the dump's memory origin (e.g., `0x80000000` for PSX RAM)
+5. Click **Options...** and confirm the block size matches the dump
+
+**Analysis tip**: After import, enable **Aggressive Instruction Finder (Prototype)** in the analysis options (**Analysis > Auto Analyze > Analyzers**). This helps Ghidra discover functions in raw dumps where entry points aren't obvious — especially useful for memory dumps where code boundaries aren't marked by standard executable headers. It can be slow on large dumps but significantly improves function detection.
+
 ## Java Plugin Internals
 
 The Java plugin uses **handler auto-discovery via reflection**. Request handlers are organized into subpackages:

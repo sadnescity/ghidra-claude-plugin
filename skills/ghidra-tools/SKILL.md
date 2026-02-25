@@ -135,3 +135,23 @@ list_methods(offset=100, limit=100)  # next 100
 ## Address Format
 
 All address parameters accept hex strings: `"0x401000"`, `"0x00401000"`, `"401000"`. The leading `0x` prefix is recommended for clarity.
+
+### Multi-Program Addressing
+
+A single Ghidra CodeBrowser window can contain multiple programs (e.g., a main executable plus shared libraries or overlays). When this happens:
+
+- **Listing tools** (`list_strings`, `list_functions`, etc.) return results from **all** programs, prefixed with the program name.
+- **Address-based tools** (`get_bytes`, `get_xrefs_to`, `decompile_function_by_address`, etc.) target the **active program** by default.
+- To target a **different program** in the same window, use the `PROGRAM::address` prefix:
+
+```
+# Active program — plain address
+get_bytes("0x00401000", 16)
+
+# Other programs in the same window — PROGRAM::address prefix
+get_bytes("helper.dll::00401000", 16)
+get_xrefs_to("overlay.bin::00042090")
+decompile_function_by_address("module.so::0x1000")
+```
+
+Both `0x`-prefixed and plain hex work for the address part. The program name must match exactly as shown by `list_instances()` or listing tools.
