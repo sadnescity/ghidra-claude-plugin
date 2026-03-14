@@ -3,7 +3,7 @@
     "ghidra-mcp": {
       "command": "uvx",
       "args": [
-        "--from", "git+https://github.com/brisma/GhidraMCP",
+        "--from", "git+https://github.com/sadnescity/GhidraMCP",
         "ghidra-mcp-bridge"
       ]
     }

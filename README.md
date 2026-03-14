@@ -1,6 +1,6 @@
 # Ghidra Plugin for Claude Code
 
-GhidraMCP integration for Claude Code. Provides MCP server configuration and reverse engineering reference skills for working with [GhidraMCP](https://github.com/brisma/GhidraMCP) -- a Model Context Protocol server that connects Claude to Ghidra's reverse engineering capabilities.
+GhidraMCP integration for Claude Code. Provides MCP server configuration and reverse engineering reference skills for working with [GhidraMCP](https://github.com/sadnescity/GhidraMCP) -- a Model Context Protocol server that connects Claude to Ghidra's reverse engineering capabilities.
 
 ## What it does
 
@@ -11,8 +11,8 @@ GhidraMCP integration for Claude Code. Provides MCP server configuration and rev
 ## Installation
 
 ```
-/plugin marketplace add brisma/claude-plugins
-/plugin install ghidra@brisma-plugins
+/plugin marketplace add sadnescity/claude-plugins
+/plugin install ghidra@sadnescity-plugins
 ```
 
 ## Prerequisites
@@ -23,4 +23,4 @@ GhidraMCP integration for Claude Code. Provides MCP server configuration and rev
 
 ## Upstream
 
-https://github.com/brisma/GhidraMCP
+https://github.com/sadnescity/GhidraMCP

@@ -2,7 +2,7 @@
   "name": "ghidra",
   "description": "GhidraMCP integration for Claude Code: MCP server configuration and reverse engineering reference. Decompile, analyze, and annotate binaries in Ghidra via MCP tools.",
   "version": "1.1.0",
-  "author": { "name": "brisma" },
-  "homepage": "https://github.com/brisma/GhidraMCP",
+  "author": { "name": "sadnescity" },
+  "homepage": "https://github.com/sadnescity/GhidraMCP",
   "license": "Apache-2.0"
 }

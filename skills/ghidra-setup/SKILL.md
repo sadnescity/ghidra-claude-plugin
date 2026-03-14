@@ -58,13 +58,13 @@ In CodeBrowser: **Edit > Tool Options > GhidraMCP**
 ### Option A: uvx (recommended, no install needed)
 
 ```bash
-uvx --from git+https://github.com/brisma/GhidraMCP ghidra-mcp-bridge
+uvx --from git+https://github.com/sadnescity/GhidraMCP ghidra-mcp-bridge
 ```
 
 ### Option B: pip install
 
 ```bash
-git clone https://github.com/brisma/GhidraMCP.git
+git clone https://github.com/sadnescity/GhidraMCP.git
 cd GhidraMCP
 pip install -r requirements.txt
 python -m ghidra_mcp_bridge
