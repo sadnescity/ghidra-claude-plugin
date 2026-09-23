@@ -1,5 +1,6 @@
 ---
-description: "GhidraMCP setup and configuration: Ghidra plugin installation, Python bridge startup, multi-instance discovery and target selection, MCP client configuration, transport options. Use when setting up or troubleshooting GhidraMCP."
+name: ghidra-setup
+description: "GhidraMCP setup and configuration: Ghidra plugin installation, Python bridge startup, multi-instance discovery and target selection, base address and overlay setup, MCP client configuration, transport options. Use when setting up or troubleshooting GhidraMCP."
 ---
 
 # GhidraMCP Setup and Configuration
@@ -95,7 +96,7 @@ python bridge_mcp_ghidra.py
 
 ## Multi-Instance Discovery and Target Selection
 
-When multiple Ghidra CodeBrowser windows are open, each takes the next free HTTP port starting at 8080 (8080, 8081, 8082, ... up to 8179). Which program lands on which port depends on boot order.
+Each CodeBrowser window with GhidraMCPPlugin enabled runs its own HTTP server, on the next free port starting at 8080 (8080, 8081, 8082, ... up to 8179). Which program lands on which port depends on boot order. An instance serves only the program in its window's **active tab**; there is no way to address another program through it.
 
 The bridge **never selects a target on its own**, not even when only one instance is running. Until a target is chosen, every tool call fails with "No Ghidra instance has been chosen" and nothing is sent. Choose once per session:
 
@@ -104,7 +105,7 @@ The bridge **never selects a target on its own**, not even when only one instanc
 - `use_instance(port)` — target whatever program is open on that port
 - `--ghidra-server URL` at startup — pin to the program found at that URL
 
-The bridge remembers the **program**, not the port. On every call it checks that the port still holds that program; if the program moved to another port it follows it, and if the port now holds a different program (or the program is open on several ports) the call is refused rather than sent to the wrong database.
+The bridge remembers the **program**, not the port. On every call it checks that the port still holds that program; if the program moved to another port it follows it, and if the port now holds a different program (or the program is open on several ports) the call is refused rather than sent to the wrong database. Switching the active tab in a CodeBrowser window counts as "a different program": calls are refused until you switch back or choose again. The bridge also sends the program's database file id with each call, and the plugin itself rejects (HTTP 409) a request meant for a different database.
 
 ## Base Address and Overlay Configuration
 
@@ -128,16 +129,16 @@ Overlays are code/data modules loaded dynamically at specific memory addresses. 
 - DLLs/shared libraries loaded at their preferred base
 - Firmware modules mapped at specific peripheral addresses
 
-**Strategy A — Separate CodeBrowser windows** (recommended for large overlays):
+**Strategy A — Separate programs, one CodeBrowser window each**:
 - Import each overlay as a separate program with its correct base address
-- Use `list_instances()` and `use_instance(port)` to switch between them
-- Each overlay gets independent analysis
+- Open each in its own CodeBrowser window (each gets its own port) and switch with `use_program(name)` (or `use_instance(port)`)
+- Each overlay gets independent analysis; references between programs are not followed
 
-**Strategy B — Single CodeBrowser window with multiple programs**:
-- Import all overlays into the same Ghidra project
-- Use `PROGRAM::address` prefix to target specific overlays in MCP tools
-- Listing tools show results from all programs simultaneously
-- Useful when you need to cross-reference between overlays frequently
+**Strategy B — Overlay memory blocks inside one program**:
+- Add each module to the main program as an **overlay** memory block (**Window > Memory Map > Add Block**, tick **Overlay**); Ghidra creates an address space per overlay, so modules sharing the same RAM range do not collide
+- MCP tools address them with Ghidra's own syntax: `"OVL::80100000"` (or `"OVL:80100000"`), where `OVL` is the overlay name; a plain address always means the default space
+- Listing tools cover the whole program, overlays included, and print overlay addresses with the `OVL::` prefix
+- Useful when you need to cross-reference between overlays and the main executable
 
 ### Why Base Addresses Matter for MCP
 
@@ -169,7 +170,7 @@ The Java plugin uses **handler auto-discovery via reflection**. Request handlers
 - `set/` — modifications (rename, set type, write bytes, etc.)
 - `act/` — actions (create struct, add bookmark, etc.)
 - `comment/` — comment operations (decompiler, disassembly comments)
-- `search/` — search operations (functions, bytes, strings)
+- `search/` — search operations (functions, bytes); strings are listed by `get/`
 
 New handlers are automatically registered when added to the correct subpackage.
 

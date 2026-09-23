@@ -1,4 +1,5 @@
 ---
+name: ghidra-workflows
 description: "GhidraMCP reverse engineering workflows: function analysis, cross-reference tracing, symbol annotation, multi-instance management, struct/enum creation. Core rule: record every finding in the Ghidra database (rename functions/variables/data, set prototypes and types, add comments) so the code reads on its own. Use when planning or executing reverse engineering tasks with Ghidra."
 ---
 
@@ -48,7 +49,7 @@ The simplest setup: one Ghidra CodeBrowser window with one program loaded.
 
 When analyzing multiple related binaries (e.g., a main executable and its DLLs, or a bootloader and firmware) in **separate CodeBrowser windows**:
 
-1. Open multiple programs in separate CodeBrowser windows
+1. Open each program in its own CodeBrowser window (launch another CodeBrowser from the Tool Chest; opening a program from the project window while one is running adds a tab to it instead)
 2. Each window takes the next free HTTP port (8080, 8081, 8082, ...), in boot order
 3. Discover instances:
    ```
@@ -63,26 +64,19 @@ When analyzing multiple related binaries (e.g., a main executable and its DLLs, 
    use_program("main.exe")    # back to main.exe
    ```
 
-## Multi-Program Workflow (Single Window)
+## Tabs and Overlays
 
-When a single CodeBrowser window contains multiple programs (e.g., a main executable with overlays or shared libraries loaded into the same project):
+Every tool acts on one program: the **active tab** of the targeted instance's window. Listings never span programs and there is no `PROGRAM::address` prefix. If a window holds several programs as tabs, switching tabs makes the bridge refuse calls until you switch back or re-select with `use_program`.
 
-- **Listing tools** return results from all programs, prefixed with the program name
-- **Address-based tools** target the active program by default
-- Use the `PROGRAM::address` prefix to target other programs:
+For dynamically loaded overlays that share a RAM range, either open each as its own program (above), or load them as **overlay memory blocks** of one program and use Ghidra's overlay address syntax:
 
 ```
-# Active program (e.g., main.exe) — plain address
-decompile_function_by_address("0x00401000")
-get_bytes("0x00401000", 16)
-
-# Other programs in the same window — PROGRAM::address prefix
-decompile_function_by_address("helper.dll::00401000")
-get_xrefs_to("overlay.bin::00042090")
-get_bytes("module.so::0x1000", 32)
+decompile_function_by_address("0x80010000")        # default space (main executable)
+decompile_function_by_address("OVL_BATTLE::80100000")  # overlay space OVL_BATTLE
+get_xrefs_to("OVL_BATTLE::80100000")
 ```
 
-This is common when analyzing systems with dynamically-loaded overlays, where the main executable and its modules coexist in the same Ghidra project.
+A plain address always means the default space, never an overlay. Overlay addresses returned by the tools already carry the `NAME::` prefix — pass them back as they are.
 
 ## Function Analysis Workflow
 
