@@ -1,19 +1,22 @@
 ---
-description: "GhidraMCP MCP tool reference: 48 tools for binary analysis — decompile, disassemble, list functions/classes/imports/exports, rename symbols, set types, cross-references, structs, enums, bookmarks, memory access. Use when working with Ghidra MCP tools."
+description: "GhidraMCP MCP tool reference: 50 tools for binary analysis — decompile, disassemble, list functions/classes/imports/exports, rename symbols, set types, cross-references, structs, enums, bookmarks, memory access. Use when working with Ghidra MCP tools."
 ---
 
 # GhidraMCP Tool Reference
 
-48 MCP tools for binary analysis via Ghidra. All tools are prefixed with `mcp__ghidra-mcp__` in the MCP protocol.
+50 MCP tools for binary analysis via Ghidra. When loaded from this plugin, Claude Code exposes them as `mcp__plugin_ghidra_ghidra-mcp__<tool>`.
 
-## Instance Management (2)
+## Instance Management (3)
+
+The bridge never picks a target by itself: call `use_program` or `use_instance` before any other tool, or every call is refused.
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `list_instances()` | — | Discover all active Ghidra instances. Returns port, program name, project name. Shows `[ACTIVE]` for the current target. |
-| `use_instance(port)` | `port: int` | Switch active instance. All subsequent tool calls target this instance. |
+| `use_instance(port)` | `port: int` | Target the program open on that port. The bridge remembers the program, not the port, and follows it if it moves. |
+| `use_program(name)` | `name: str` | Target by program name, exactly as `list_instances()` shows it. Preferred: ports change between restarts. Refused if the name is open on several ports. |
 
-## Function Analysis (8)
+## Function Analysis (10)
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
@@ -25,6 +28,8 @@ description: "GhidraMCP MCP tool reference: 48 tools for binary analysis — dec
 | `get_function_by_address(address)` | `address: str` (hex) | Get function metadata: name, entry point, size, signature. |
 | `get_current_function()` | — | Get function at the current cursor position in Ghidra UI. |
 | `get_callee(address)` | `address: str` (hex) | List all functions called by the function at the given address. |
+| `create_function(address, name)` | `address: str` (hex, or several comma-separated), `name=""` (single address only) | Create a function, disassembling first if needed. For code auto-analysis missed (jump table targets, hand-written asm, RAM dumps). Returns a per-address report. |
+| `delete_function(address)` | `address: str` (hex, or several comma-separated) | Delete the function starting at the address, leaving the instructions disassembled. An address inside a function is reported, not deleted. |
 
 ## Symbol Listing (5)
 

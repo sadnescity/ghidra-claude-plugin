@@ -1,14 +1,14 @@
 ---
-description: "GhidraMCP setup and configuration: Ghidra plugin installation, Python bridge startup, multi-instance auto-discovery, MCP client configuration, transport options. Use when setting up or troubleshooting GhidraMCP."
+description: "GhidraMCP setup and configuration: Ghidra plugin installation, Python bridge startup, multi-instance discovery and target selection, MCP client configuration, transport options. Use when setting up or troubleshooting GhidraMCP."
 ---
 
 # GhidraMCP Setup and Configuration
 
 ## Prerequisites
 
-- **Ghidra 11.3.2+** (National Security Agency reverse engineering framework)
-- **Java 21+** (required by Ghidra 11.x)
-- **Python 3.10+** (for the MCP bridge)
+- **Ghidra 12.1.x** (tested on 12.1.4)
+- **Java 21+** (required by Ghidra 12.x)
+- **Python 3.10+** (for the MCP bridge; it uses the `mcp` 2.x SDK and speaks MCP 2026-07-28 plus the older handshake-based revisions)
 - **uv** (recommended) or pip for Python dependency management
 
 ## Architecture
@@ -36,7 +36,7 @@ The system has two components:
 
 ## Ghidra Plugin Installation
 
-1. Download the latest release `.zip` from the GhidraMCP repository
+1. Download the release `.zip` built for your Ghidra version (e.g. `ghidra_12.1.4_PUBLIC_..._GhidraMCP.zip`) from the GhidraMCP repository
 2. Open Ghidra
 3. Go to **File > Install Extensions**
 4. Click the `+` button, select the downloaded `.zip`
@@ -46,12 +46,21 @@ The system has two components:
 8. Enable **GhidraMCPPlugin**
 9. The plugin starts an HTTP server (check Ghidra console for the port message)
 
+Alternatively, unzip the extension into `<ghidra>/Ghidra/Extensions` and restart Ghidra.
+
+**macOS arm64:** the official release ships no native binaries for this platform, so the decompiler will not start (decompile tools fail). Build them once:
+
+```bash
+cd <ghidra>/support/gradle && gradle buildNatives   # or ./gradlew buildNatives
+```
+
 ### Plugin Configuration
 
-In CodeBrowser: **Edit > Tool Options > GhidraMCP**
+In CodeBrowser: **Edit > Tool Options > GhidraMCP HTTP Server**
 
-- **Server Port** — HTTP port (default: 8080). Change if another service uses 8080.
-- **Server Address** — bind address (default: localhost). Use 0.0.0.0 for remote access.
+- **Server Port** — first HTTP port to try (default: 8080). If it is taken, the plugin uses the next free one (up to +99).
+- **Server Address** — bind address (default: 127.0.0.1). Use 0.0.0.0 for remote access.
+- **Decompile Timeout** — seconds (default: 30).
 
 ## Python Bridge
 
@@ -61,37 +70,41 @@ In CodeBrowser: **Edit > Tool Options > GhidraMCP**
 uvx --from git+https://github.com/sadnescity/GhidraMCP ghidra-mcp-bridge
 ```
 
+This is what the plugin's `.mcp.json` runs. uvx caches git installs, so after the bridge is updated upstream force a refresh once with `uvx --refresh --from git+https://github.com/sadnescity/GhidraMCP ghidra-mcp-bridge` (or `uv cache clean`), then restart Claude Code.
+
 ### Option B: pip install
 
 ```bash
 git clone https://github.com/sadnescity/GhidraMCP.git
 cd GhidraMCP
 pip install -r requirements.txt
-python -m ghidra_mcp_bridge
+python bridge_mcp_ghidra.py
 ```
 
 ### Bridge CLI Arguments
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--ghidra-server` | `http://localhost:8080` | Ghidra plugin HTTP URL |
-| `--mcp-host` | `localhost` | MCP server bind address |
-| `--mcp-port` | `0` (auto) | MCP server port (stdio ignores this) |
-| `--transport` | `stdio` | Transport: `stdio`, `sse`, or `streamable-http` |
+| `--ghidra-server` | none | Pin the bridge to the program open at this URL (e.g. `http://127.0.0.1:8080/`). Without it, nothing is targeted until `use_program`/`use_instance` |
+| `--mcp-host` | `127.0.0.1` | MCP server bind address (`sse`/`streamable-http` only) |
+| `--mcp-port` | `8081` | MCP server port (`sse`/`streamable-http` only; `/mcp` endpoint) |
+| `--transport` | `stdio` | Transport: `stdio`, `streamable-http`, or `sse` (deprecated) |
 | `--ghidra-timeout` | `30` | HTTP request timeout in seconds |
 | `--discovery-base-port` | `8080` | Start of auto-discovery port range |
 | `--discovery-range` | `100` | Number of ports to scan (8080-8179) |
 
-## Multi-Instance Auto-Discovery
+## Multi-Instance Discovery and Target Selection
 
-When multiple Ghidra CodeBrowser windows are open, each gets its own HTTP port:
+When multiple Ghidra CodeBrowser windows are open, each takes the next free HTTP port starting at 8080 (8080, 8081, 8082, ... up to 8179). Which program lands on which port depends on boot order.
 
-- First window: port 8080
-- Second window: port 8081
-- Third window: port 8082
-- ...up to port 8179
+The bridge **never selects a target on its own**, not even when only one instance is running. Until a target is chosen, every tool call fails with "No Ghidra instance has been chosen" and nothing is sent. Choose once per session:
 
-The bridge auto-discovers all active instances by scanning the port range every 30 seconds. If only one instance is running, it is automatically selected as the active target. Use `list_instances()` and `use_instance(port)` to manage multiple instances.
+- `list_instances()` — scans the whole port range on demand (no background polling) and lists port, program and project; the chosen one is marked `[ACTIVE]`
+- `use_program(name)` — target by program name, exactly as `list_instances()` shows it (preferred: ports change between restarts)
+- `use_instance(port)` — target whatever program is open on that port
+- `--ghidra-server URL` at startup — pin to the program found at that URL
+
+The bridge remembers the **program**, not the port. On every call it checks that the port still holds that program; if the program moved to another port it follows it, and if the port now holds a different program (or the program is open on several ports) the call is refused rather than sent to the wrong database.
 
 ## Base Address and Overlay Configuration
 
@@ -168,16 +181,25 @@ New handlers are automatically registered when added to the correct subpackage.
 - Ensure the plugin is enabled in **File > Configure > Developer**
 
 ### Port conflicts
-- If port 8080 is in use, the plugin will fail to start
-- Change the port in **Edit > Tool Options > GhidraMCP > Server Port**
-- Or stop the conflicting service
+- If port 8080 is in use, the plugin takes the next free port (the Ghidra console logs which one)
+- Change the starting port in **Edit > Tool Options > GhidraMCP HTTP Server > Server Port**
+- With `--transport streamable-http`, the bridge's default `--mcp-port 8081` can collide with a second Ghidra instance: pick another port
 
 ### Bridge cannot connect
-- Verify the Ghidra plugin is running: `curl http://localhost:8080/methods` should return JSON
+- Verify the Ghidra plugin is running: `curl http://127.0.0.1:8080/instances` should return JSON naming the program
 - Check firewall rules if using remote access
 - Increase timeout with `--ghidra-timeout` for slow operations (large binaries)
 
 ### No instances discovered
 - Ensure at least one CodeBrowser window has the plugin enabled
 - Check that the port range is correct (default 8080-8179)
-- Try connecting directly: `--ghidra-server http://localhost:PORT`
+- Try pinning directly: `--ghidra-server http://127.0.0.1:PORT/`
+
+### "No Ghidra instance has been chosen"
+- Expected until you call `use_program(name)` or `use_instance(port)` (see above)
+
+### Decompiler does not start (macOS arm64)
+- Build the natives: `cd <ghidra>/support/gradle && gradle buildNatives`
+
+### Bridge behaves like an old version
+- uvx is serving a cached git install: run it once with `--refresh`, or `uv cache clean`

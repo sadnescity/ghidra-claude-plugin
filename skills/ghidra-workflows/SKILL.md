@@ -6,7 +6,7 @@ description: "GhidraMCP reverse engineering workflows: function analysis, cross-
 
 ## Before You Start
 
-**Always call `list_instances()` first** before any RE work. This discovers all running Ghidra CodeBrowser instances and shows which one is active. Without this step, you may target the wrong program or miss available instances entirely.
+**Always call `list_instances()` first** before any RE work, then choose the target with `use_program(name)` (or `use_instance(port)`). The bridge never chooses for you: until a target is chosen every tool call is refused.
 
 ## Core Rule: Record Knowledge in the Database
 
@@ -41,26 +41,26 @@ The simplest setup: one Ghidra CodeBrowser window with one program loaded.
 1. Start Ghidra, open a program in CodeBrowser
 2. Enable GhidraMCPPlugin (File > Configure > Developer)
 3. The MCP bridge auto-starts via the `.mcp.json` configuration
-4. Verify with `list_instances()` — confirms the program name and port
-5. All tools automatically target the single running instance
+4. `list_instances()` — shows the program name and port
+5. `use_program("<name>")` — choose it; even a single instance is not selected automatically
 
 ## Multi-Instance Workflow
 
 When analyzing multiple related binaries (e.g., a main executable and its DLLs, or a bootloader and firmware) in **separate CodeBrowser windows**:
 
 1. Open multiple programs in separate CodeBrowser windows
-2. Each window gets its own HTTP port (8080, 8081, 8082, ...)
+2. Each window takes the next free HTTP port (8080, 8081, 8082, ...), in boot order
 3. Discover instances:
    ```
    list_instances()
-   → port=8080, program=main.exe, project=MyProject [ACTIVE]
-   → port=8081, program=helper.dll, project=MyProject
+   → Port 8080: main.exe (MyProject)
+   → Port 8081: helper.dll (MyProject)
    ```
 4. Switch between them as needed:
    ```
-   use_instance(8081)  # now targeting helper.dll
+   use_program("helper.dll")  # now targeting helper.dll, wherever it runs
    decompile_function("DllMain")
-   use_instance(8080)  # back to main.exe
+   use_program("main.exe")    # back to main.exe
    ```
 
 ## Multi-Program Workflow (Single Window)
@@ -302,6 +302,6 @@ Use runtime observations to guide Ghidra analysis:
 - **Use bookmarks** to track progress across analysis sessions. Categories help organize findings (e.g., "Crypto", "Network", "Parsing").
 - **Paginate large results**: for binaries with thousands of functions, use `offset` and `limit` to avoid timeouts.
 - **Decompile after annotation**: each rename, retype, or struct application improves the decompiler output. Re-read after changes.
-- **Create functions manually**: if Ghidra didn't auto-detect a function (grayed-out code in the decompiler), right-click the entry point in the listing view and select **Create Function** (or press **F**). This is common with RAM dumps or hand-written assembly. Once created, the function can be decompiled and renamed normally.
+- **Create functions manually**: if Ghidra didn't auto-detect a function (grayed-out code in the decompiler), right-click the entry point in the listing view and select **Create Function** (or press **F**), or call `create_function(address)`. This is common with RAM dumps or hand-written assembly. Once created, the function can be decompiled and renamed normally.
 - **Set register values for better decompilation**: some architectures use a global pointer register (e.g., `gp` on MIPS). If Ghidra can't resolve global accesses, right-click the function entry point → **Set Register Values** (CTRL+R) and provide the known register value. This disambiguates offsets and dramatically improves the decompiled output.
 - **Iterate on parameter and variable types**: changing `int param_1` to `char *param_1` or a custom struct pointer in `set_function_prototype` can transform unreadable pointer arithmetic into clean field accesses. Each type refinement improves the decompiler output — re-read after changes and refine further.
