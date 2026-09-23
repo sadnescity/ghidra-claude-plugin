@@ -7,6 +7,7 @@ GhidraMCP integration for Claude Code. Provides MCP server configuration and rev
 - Configures the GhidraMCP MCP server so Claude Code can call Ghidra tools
 - Bundles reference skills for setup, tool usage, and RE workflows
 - 48 MCP tools: decompile, disassemble, rename symbols, set types, cross-references, structs, enums, memory access, and more
+- Teaches Claude to record what it learns directly in the Ghidra database (meaningful names, prototypes, types, structs/enums, comments) so the decompiled code is readable afterwards
 
 ## Installation
 

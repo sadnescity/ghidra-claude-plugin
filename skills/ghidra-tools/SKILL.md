@@ -55,6 +55,8 @@ description: "GhidraMCP MCP tool reference: 48 tools for binary analysis — dec
 | `set_function_prototype(function_address, prototype)` | `function_address: str (hex), prototype: str` | Set function signature. Example: `"int parse_header(FILE* f, int size)"` |
 | `set_local_variable_type(function_address, variable_name, new_type)` | `function_address: str (hex), variable_name: str, new_type: str` | Set a local variable's type within a function. |
 
+Use these continuously during analysis: whenever you identify what a function, variable, parameter, global, struct or enum is for, record it in the database (rename, retype, comment) so the decompiled code explains itself. Conventions (`maybe_`/`unk_` for uncertain names, not renaming library symbols, propagation, verification) are in the **ghidra-workflows** skill, "Core Rule: Record Knowledge in the Database".
+
 ## Cross-References (3)
 
 | Tool | Parameters | Description |

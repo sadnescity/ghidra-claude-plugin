@@ -1,5 +1,5 @@
 ---
-description: "GhidraMCP reverse engineering workflows: function analysis, cross-reference tracing, symbol annotation, multi-instance management, struct/enum creation. Use when planning or executing reverse engineering tasks with Ghidra."
+description: "GhidraMCP reverse engineering workflows: function analysis, cross-reference tracing, symbol annotation, multi-instance management, struct/enum creation. Core rule: record every finding in the Ghidra database (rename functions/variables/data, set prototypes and types, add comments) so the code reads on its own. Use when planning or executing reverse engineering tasks with Ghidra."
 ---
 
 # GhidraMCP Reverse Engineering Workflows
@@ -7,6 +7,32 @@ description: "GhidraMCP reverse engineering workflows: function analysis, cross-
 ## Before You Start
 
 **Always call `list_instances()` first** before any RE work. This discovers all running Ghidra CodeBrowser instances and shows which one is active. Without this step, you may target the wrong program or miss available instances entirely.
+
+## Core Rule: Record Knowledge in the Database
+
+**Every time you work out what something is for, write it into the Ghidra program — don't keep it only in the chat.** Applies to every workflow below. The goal: a person (or a later session) reads the decompiler output and understands it without redoing your analysis — no `FUN_80012345`, `param_1`, `DAT_8001f000` left behind for things you've understood.
+
+| You understood… | Record it with |
+|---|---|
+| a function's purpose | `rename_function_by_address` (or `rename_function`) |
+| its signature / parameter meanings | `set_function_prototype` — names and types params in one call |
+| a local (or parameter) | `rename_variable`, then `set_local_variable_type` |
+| a global / data label | `rename_data`, then `set_global_data_type` |
+| a memory layout / set of constants | `create_struct` / `create_enum`, then apply the type to data, locals or prototypes |
+| non-obvious logic (bit tricks, magic numbers, hardware access, side effects) | `set_decompiler_comment` / `set_disassembly_comment` at that instruction |
+
+**When:** as soon as confidence is reasonable — don't wait for certainty. Mark guesses consistently: `maybe_` prefix for a plausible purpose (`maybe_load_save_slot`), `unk_` for "something, role unclear" (`unk_flags_8001f000`), or a comment stating the doubt. Revise the name when evidence confirms or refutes it, and drop the prefix then.
+
+**Naming:**
+- Descriptive `snake_case` verbs for functions (`decompress_lz_block`), nouns for data (`sprite_table`, `player_hp`). If the program already has a naming convention (imported symbols, earlier annotations, SDK names), match it instead.
+- Keep addresses, register names, hardware details and units in comments, not in names — unless the address is the only distinguishing fact (then `unk_…_<addr>` is fine).
+- Don't rename symbols that already carry real names: imports/exports, library or SDK functions identified by signatures/FID, symbols loaded from a symbol file. Rename a library function only if you've verified it's misidentified, and say why in a comment.
+
+**Propagate:** after naming a function, look at its callers (`get_xrefs_to`) and callees (`get_callee`) — the new name and prototype often reveal what they do; name them too. Typed prototypes and struct pointers flow into every caller's decompilation, so prefer fixing the type at the source (prototype, global type) over patching each use site.
+
+**Verify:** re-decompile (or `get_function_by_address` / `get_data_by_label`) after changes to confirm the rename or type took effect — a failed call or a name collision can leave the old name silently. Variable names can change after a retype/re-decompile; re-read before the next `rename_variable`.
+
+**Summarise:** put a 1–3 line comment at the function's entry address with `set_decompiler_comment` — what it does, key inputs/outputs, side effects, and anything still uncertain.
 
 ## Single Instance (Default)
 
@@ -272,7 +298,7 @@ Use runtime observations to guide Ghidra analysis:
 ## Tips
 
 - **Start broad, then narrow down**: use `list_functions()` or `search_functions_by_name()` to orient, then decompile specific targets.
-- **Rename early and often**: even tentative names like `maybe_init_network` are better than `FUN_00401000`. You can always rename again.
+- **Rename early and often**: see the Core Rule above — tentative names like `maybe_init_network` beat `FUN_00401000`, and you can always rename again.
 - **Use bookmarks** to track progress across analysis sessions. Categories help organize findings (e.g., "Crypto", "Network", "Parsing").
 - **Paginate large results**: for binaries with thousands of functions, use `offset` and `limit` to avoid timeouts.
 - **Decompile after annotation**: each rename, retype, or struct application improves the decompiler output. Re-read after changes.
