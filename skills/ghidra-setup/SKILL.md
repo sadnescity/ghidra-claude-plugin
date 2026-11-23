@@ -1,53 +1,38 @@
 ---
 name: ghidra-setup
-description: "GhidraMCP setup and configuration: Ghidra plugin installation, Python bridge startup, multi-instance discovery and target selection, base address and overlay setup, MCP client configuration, transport options. Use when setting up or troubleshooting GhidraMCP."
+description: "GhidraMCP setup and configuration: Ghidra plugin installation, connecting Claude Code (the bundled MCP server over stdio), multi-instance and multi-program targeting, base address and overlay setup, plugin options. Use when setting up or troubleshooting GhidraMCP."
 ---
 
 # GhidraMCP Setup and Configuration
 
 ## Prerequisites
 
-- **Ghidra 12.1.x** (tested on 12.1.4)
-- **Java 21+** (required by Ghidra 12.x)
-- **Python 3.10+** (for the MCP bridge; it uses the `mcp` 2.x SDK and speaks MCP 2026-07-28 plus the older handshake-based revisions)
-- **uv** (recommended) or pip for Python dependency management
+- **Ghidra 12.2** (requires **Java 25**)
+- A JDK 21+ on the `PATH` for the plugin's MCP server (Ghidra's JDK 25 is fine)
+- Nothing else: there is no Python bridge and no SDK.
 
 ## Architecture
 
 ```
-MCP Client (Claude Code)
-    │
-    │  stdio / SSE / streamable-http
-    ▼
-Python Bridge (ghidra-mcp-bridge)
-    │
-    │  HTTP REST
-    ▼
-Ghidra Plugin (GhidraMCPPlugin)
-    │
-    │  Ghidra Flat API
-    ▼
-Ghidra Program Database
+Claude Code ──stdio─▶ java -jar server/ghidra-mcp-bridge.jar   (MCP 2026-07-28; a child process of Claude Code)
+                         │
+                         │  confirms the chosen program, then forwards the call
+                         ▼
+     Ghidra CodeBrowser endpoints 127.0.0.1:8080, 8081, ...  (one per CodeBrowser)
+                         │
+                         ▼
+     the program's database (any program open in that CodeBrowser)
 ```
 
-The system has two components:
-
-1. **Java Plugin** — runs inside Ghidra, exposes an HTTP API on a configurable port (default 8080)
-2. **Python Bridge** — translates MCP protocol to HTTP calls against the Java plugin
+- Each CodeBrowser with **GhidraMCPPlugin** enabled serves its open programs on the first free loopback port from 8080.
+- Tools are declared once, in the Java plugin; the MCP schema is generated from them.
 
 ## Ghidra Plugin Installation
 
-1. Download the release `.zip` built for your Ghidra version (e.g. `ghidra_12.1.4_PUBLIC_..._GhidraMCP.zip`) from the GhidraMCP repository
-2. Open Ghidra
-3. Go to **File > Install Extensions**
-4. Click the `+` button, select the downloaded `.zip`
-5. Restart Ghidra
-6. Open a program in **CodeBrowser**
-7. Go to **File > Configure > Developer**
-8. Enable **GhidraMCPPlugin**
-9. The plugin starts an HTTP server (check Ghidra console for the port message)
-
-Alternatively, unzip the extension into `<ghidra>/Ghidra/Extensions` and restart Ghidra.
+1. Get the release `.zip` built for your Ghidra version (`ghidra_12.2_PUBLIC_..._GhidraMCP.zip`), or build it (`gradle` in the GhidraMCP repository with `GHIDRA_INSTALL_DIR` set)
+2. Ghidra: **File > Install Extensions**, `+`, select the zip, restart Ghidra (or unzip it into `<ghidra>/Ghidra/Extensions`)
+3. Open a program in **CodeBrowser**; enable **GhidraMCPPlugin** in **File > Configure > Developer** (Ghidra may offer it in a "New Plugins Found" dialog)
+4. The Ghidra console logs `GhidraMCP serving this tool's programs on 127.0.0.1:8080`
 
 **macOS arm64:** the official release ships no native binaries for this platform, so the decompiler will not start (decompile tools fail). Build them once:
 
@@ -55,57 +40,46 @@ Alternatively, unzip the extension into `<ghidra>/Ghidra/Extensions` and restart
 cd <ghidra>/support/gradle && gradle buildNatives   # or ./gradlew buildNatives
 ```
 
-### Plugin Configuration
+### Plugin Options
 
 In CodeBrowser: **Edit > Tool Options > GhidraMCP HTTP Server**
 
-- **Server Port** — first HTTP port to try (default: 8080). If it is taken, the plugin uses the next free one (up to +99).
-- **Server Address** — bind address (default: 127.0.0.1). Use 0.0.0.0 for remote access.
-- **Decompile Timeout** — seconds (default: 30).
+- **Server Port** — first port tried for this CodeBrowser's endpoint (default 8080; the next free one up to +99 is used)
+- **Decompile Timeout** — seconds (default 60)
 
-## Python Bridge
+Everything listens on 127.0.0.1 only; requests from web pages (`Origin` header, foreign `Host`) are refused.
 
-### Option A: uvx (recommended, no install needed)
+## Connecting Claude Code
 
-```bash
-uvx --from git+https://github.com/sadnescity/GhidraMCP ghidra-mcp-bridge
+This plugin's `.mcp.json` runs the MCP server as Claude Code's child process:
+
+```json
+{ "mcpServers": { "ghidra-mcp": { "command": "java",
+  "args": ["-jar", "${CLAUDE_PLUGIN_ROOT}/server/ghidra-mcp-bridge.jar"] } } }
 ```
 
-This is what the plugin's `.mcp.json` runs. uvx caches git installs, so after the bridge is updated upstream force a refresh once with `uvx --refresh --from git+https://github.com/sadnescity/GhidraMCP ghidra-mcp-bridge` (or `uv cache clean`), then restart Claude Code.
+`ghidra-mcp-bridge.jar` is the MCP server of the GhidraMCP project (no Ghidra classes; built by `gradle bridgeJar` in the GhidraMCP repository). It speaks MCP 2026-07-28 (stateless; Claude Code picks it after a `server/discover` probe) and still answers clients that open with `initialize` (2025-11-25 and the two before). It keeps no state: it looks the named program up on every port at each call. So:
 
-### Option B: pip install
+- **Start order does not matter.** With Ghidra closed the tools are listed anyway (from the catalog bundled in the jar) and calls answer `[NO_GHIDRA]`; open Ghidra and the next call finds it.
+- Ghidra can be closed and reopened while Claude Code runs; the program is found on whatever port it comes back on.
+- If the jar and the installed extension come from different builds, the first call that reaches Ghidra switches to the extension's tool list and Claude Code reloads it (`notifications/tools/list_changed` on its `subscriptions/listen` stream). Keep both from the same build anyway.
 
-```bash
-git clone https://github.com/sadnescity/GhidraMCP.git
-cd GhidraMCP
-pip install -r requirements.txt
-python bridge_mcp_ghidra.py
-```
+Options (append to `args`): `--discovery-base-port 8080`, `--discovery-range 100`, `--ghidra-timeout 120`, `--version`.
 
-### Bridge CLI Arguments
+There is no HTTP MCP endpoint: MCP over HTTP is meant for remote servers, and a local one would be one more open port to protect.
 
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--ghidra-server` | none | Pin the bridge to the program open at this URL (e.g. `http://127.0.0.1:8080/`). Without it, nothing is targeted until `use_program`/`use_instance` |
-| `--mcp-host` | `127.0.0.1` | MCP server bind address (`sse`/`streamable-http` only) |
-| `--mcp-port` | `8081` | MCP server port (`sse`/`streamable-http` only; `/mcp` endpoint) |
-| `--transport` | `stdio` | Transport: `stdio`, `streamable-http`, or `sse` (deprecated) |
-| `--ghidra-timeout` | `30` | HTTP request timeout in seconds |
-| `--discovery-base-port` | `8080` | Start of auto-discovery port range |
-| `--discovery-range` | `100` | Number of ports to scan (8080-8179) |
+## Targeting: Instances and Programs
 
-## Multi-Instance Discovery and Target Selection
+Any number of Ghidra instances, each with any number of programs open (tabs or windows). Ports follow boot order.
 
-Each CodeBrowser window with GhidraMCPPlugin enabled runs its own HTTP server, on the next free port starting at 8080 (8080, 8081, 8082, ... up to 8179). Which program lands on which port depends on boot order. An instance serves only the program in its window's **active tab**; there is no way to address another program through it.
+**Every tool takes a required `program` argument**, exactly as `list_instances()` shows it:
 
-The bridge **never selects a target on its own**, not even when only one instance is running. Until a target is chosen, every tool call fails with "No Ghidra instance has been chosen" and nothing is sent. Choose once per session:
+- `list_instances()` — every instance and every open program in it, each with its `program="..."` value: the program's name, or `project:/path` when the same name is open in more than one project
+- `decompile_function(program="SLUS_012.57", name="main")` — every other tool names its program the same way
 
-- `list_instances()` — scans the whole port range on demand (no background polling) and lists port, program and project; the chosen one is marked `[ACTIVE]`
-- `use_program(name)` — target by program name, exactly as `list_instances()` shows it (preferred: ports change between restarts)
-- `use_instance(port)` — target whatever program is open on that port
-- `--ghidra-server URL` at startup — pin to the program found at that URL
+Nothing is remembered between calls and nothing is chosen for you, not even when a single program is open: a call without `program` is refused with `[MISSING_PARAMETER]`. This is what MCP 2026-07-28 requires (no state carried from earlier requests), and it is also safer: one MCP server process serves the main conversation and its subagents at once, so a remembered choice made by one of them would silently redirect the others.
 
-The bridge remembers the **program**, not the port. On every call it checks that the port still holds that program; if the program moved to another port it follows it, and if the port now holds a different program (or the program is open on several ports) the call is refused rather than sent to the wrong database. Switching the active tab in a CodeBrowser window counts as "a different program": calls are refused until you switch back or choose again. The bridge also sends the program's database file id with each call, and the plugin itself rejects (HTTP 409) a request meant for a different database.
+The `program` value names a database (its file id), not a port. At each call it is looked up on every port: if Ghidra restarted on another port it is found there; if it is closed the call fails with `[PROGRAM_NOT_FOUND]` and nothing is sent; if the value matches two open programs it fails with `[AMBIGUOUS]` and lists the values that tell them apart. If a Ghidra port does not answer in time the call fails with `[BUSY]` rather than risk the program being open there too. Several programs of one project, and one program open in two CodeBrowser windows of the same Ghidra, are fine; only two copies of one project open in two Ghidra processes cannot be told apart: close one. The instance itself also refuses (`[NOT_HERE]`) a call for a database it does not have open. The analyst switching tabs changes nothing.
 
 ## Base Address and Overlay Configuration
 
@@ -129,13 +103,13 @@ Overlays are code/data modules loaded dynamically at specific memory addresses. 
 - DLLs/shared libraries loaded at their preferred base
 - Firmware modules mapped at specific peripheral addresses
 
-**Strategy A — Separate programs, one CodeBrowser window each**:
+**Strategy A — Separate programs**:
 - Import each overlay as a separate program with its correct base address
-- Open each in its own CodeBrowser window (each gets its own port) and switch with `use_program(name)` (or `use_instance(port)`)
+- Open them in one CodeBrowser (as tabs) or several; each call names the one it works on with `program="<name>"`
 - Each overlay gets independent analysis; references between programs are not followed
 
 **Strategy B — Overlay memory blocks inside one program**:
-- Add each module to the main program as an **overlay** memory block (**Window > Memory Map > Add Block**, tick **Overlay**); Ghidra creates an address space per overlay, so modules sharing the same RAM range do not collide
+- Add each module to the main program as an **overlay** memory block (**Window > Memory Map > Add Block**, tick **Overlay**, or `create_memory_block(name, address, file_path=..., overlay=true)`); Ghidra creates an address space per overlay, so modules sharing the same RAM range do not collide
 - MCP tools address them with Ghidra's own syntax: `"OVL::80100000"` (or `"OVL:80100000"`), where `OVL` is the overlay name; a plain address always means the default space
 - Listing tools cover the whole program, overlays included, and print overlay addresses with the `OVL::` prefix
 - Useful when you need to cross-reference between overlays and the main executable
@@ -162,45 +136,31 @@ Instead of analyzing an executable file, you can import a raw memory dump captur
 
 **Analysis tip**: After import, enable **Aggressive Instruction Finder (Prototype)** in the analysis options (**Analysis > Auto Analyze > Analyzers**). This helps Ghidra discover functions in raw dumps where entry points aren't obvious — especially useful for memory dumps where code boundaries aren't marked by standard executable headers. It can be slow on large dumps but significantly improves function detection.
 
-## Java Plugin Internals
+## Plugin Internals
 
-The Java plugin uses **handler auto-discovery via reflection**. Request handlers are organized into subpackages:
-
-- `get/` — read-only queries (list functions, decompile, get bytes, etc.)
-- `set/` — modifications (rename, set type, write bytes, etc.)
-- `act/` — actions (create struct, add bookmark, etc.)
-- `comment/` — comment operations (decompiler, disassembly comments)
-- `search/` — search operations (functions, bytes); strings are listed by `get/`
-
-New handlers are automatically registered when added to the correct subpackage.
+- `tools/` — the tools: methods annotated `@Tool`, parameters `@P`. The annotation is the whole definition; the MCP schema is generated from it.
+- `core/` — `Ctx` (address parsing, function lookup, type resolution, transactions on the Swing thread named after the Claude Code session, a cached decompiler per program), `InstanceServer` (the per-CodeBrowser endpoint), `ToolRegistry`.
+- `mcp/` — the MCP server: protocol (dual-era), router (discovery, resolving `program`), stdio transport. No Ghidra code; built separately as `ghidra-mcp-bridge.jar` (the plugin's `server/`), not part of the extension.
 
 ## Troubleshooting
 
 ### Plugin not loading
-- Verify Java 21+ is installed: `java -version`
-- Check Ghidra console for errors after enabling the plugin
-- Ensure the plugin is enabled in **File > Configure > Developer**
+- Ghidra 12.2 needs Java 25: `java -version`
+- Check the Ghidra console after enabling the plugin in **File > Configure > Developer**
 
-### Port conflicts
-- If port 8080 is in use, the plugin takes the next free port (the Ghidra console logs which one)
-- Change the starting port in **Edit > Tool Options > GhidraMCP HTTP Server > Server Port**
-- With `--transport streamable-http`, the bridge's default `--mcp-port 8081` can collide with a second Ghidra instance: pick another port
+### Claude Code shows the server as failed
+- `java -version` must print 21 or newer; run `java -jar <plugin>/server/ghidra-mcp-bridge.jar --version`
 
-### Bridge cannot connect
-- Verify the Ghidra plugin is running: `curl http://127.0.0.1:8080/instances` should return JSON naming the program
-- Check firewall rules if using remote access
-- Increase timeout with `--ghidra-timeout` for slow operations (large binaries)
+### `[NO_GHIDRA]` / no instances discovered
+- Start Ghidra, open a program in the CodeBrowser and enable the plugin
+- `curl http://127.0.0.1:8080/instances` should list the open programs
+- The port range scanned is 8080-8179
 
-### No instances discovered
-- Ensure at least one CodeBrowser window has the plugin enabled
-- Check that the port range is correct (default 8080-8179)
-- Try pinning directly: `--ghidra-server http://127.0.0.1:PORT/`
+### `[MISSING_PARAMETER]` about `program`
+- Every tool needs `program="..."`, as `list_instances()` shows it
 
-### "No Ghidra instance has been chosen"
-- Expected until you call `use_program(name)` or `use_instance(port)` (see above)
+### `[PROGRAM_NOT_FOUND]` / `[NOT_HERE]`
+- The program was closed, or its Ghidra exited, or the value is misspelt. `list_instances()` shows what is open
 
 ### Decompiler does not start (macOS arm64)
 - Build the natives: `cd <ghidra>/support/gradle && gradle buildNatives`
-
-### Bridge behaves like an old version
-- uvx is serving a cached git install: run it once with `--refresh`, or `uv cache clean`

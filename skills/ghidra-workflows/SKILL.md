@@ -7,7 +7,7 @@ description: "GhidraMCP reverse engineering workflows: function analysis, cross-
 
 ## Before You Start
 
-**Always call `list_instances()` first** before any RE work, then choose the target with `use_program(name)` (or `use_instance(port)`). The bridge never chooses for you: until a target is chosen every tool call is refused.
+**Always call `list_instances()` first** before any RE work. It shows every open program with the `program="..."` value that names it. **Every tool call must pass that `program`**: nothing is remembered between calls and nothing is chosen for you (a call without it is refused with `[MISSING_PARAMETER]`). The examples below omit it for brevity.
 
 ## Core Rule: Record Knowledge in the Database
 
@@ -17,10 +17,12 @@ description: "GhidraMCP reverse engineering workflows: function analysis, cross-
 |---|---|
 | a function's purpose | `rename_function_by_address` (or `rename_function`) |
 | its signature / parameter meanings | `set_function_prototype` — names and types params in one call |
-| a local (or parameter) | `rename_variable`, then `set_local_variable_type` |
+| a local (or parameter) | `rename_variable` / `set_local_variable_type`; several at once with `set_variables` (one call, all or nothing) |
 | a global / data label | `rename_data`, then `set_global_data_type` |
-| a memory layout / set of constants | `create_struct` / `create_enum`, then apply the type to data, locals or prototypes |
-| non-obvious logic (bit tricks, magic numbers, hardware access, side effects) | `set_decompiler_comment` / `set_disassembly_comment` at that instruction |
+| a memory layout / set of constants | `create_struct` / `create_enum` (or many types at once from C with `import_c_types`), then apply the type to data, locals or prototypes; fix one field with `modify_struct_field` |
+| a magic number or hardware register in an instruction | `set_equate` (e.g. `0x1f801810` → `GPU_DATA`), shown by the listing and the decompiler |
+| a pointer the analyzer could not see (jump/callback table, computed address) | `add_reference` |
+| non-obvious logic (bit tricks, magic numbers, hardware access, side effects) | `set_decompiler_comment` / `set_disassembly_comment` at that instruction; many at once with `set_comments` |
 
 **When:** as soon as confidence is reasonable — don't wait for certainty. Mark guesses consistently: `maybe_` prefix for a plausible purpose (`maybe_load_save_slot`), `unk_` for "something, role unclear" (`unk_flags_8001f000`), or a comment stating the doubt. Revise the name when evidence confirms or refutes it, and drop the prefix then.
 
@@ -33,7 +35,9 @@ description: "GhidraMCP reverse engineering workflows: function analysis, cross-
 
 **Verify:** re-decompile (or `get_function_by_address` / `get_data_by_label`) after changes to confirm the rename or type took effect — a failed call or a name collision can leave the old name silently. Variable names can change after a retype/re-decompile; re-read before the next `rename_variable`.
 
-**Summarise:** put a 1–3 line comment at the function's entry address with `set_decompiler_comment` — what it does, key inputs/outputs, side effects, and anything still uncertain.
+**Summarise:** put a 1–3 line header at the function's entry with `set_comment(address, comment, type="plate")` — what it does, key inputs/outputs, side effects, and anything still uncertain. The decompiler shows it above the function.
+
+**Save:** changes are live in Ghidra but unsaved until `save_program` (or the analyst saves). Save at natural checkpoints.
 
 ## Single Instance (Default)
 
@@ -41,32 +45,30 @@ The simplest setup: one Ghidra CodeBrowser window with one program loaded.
 
 1. Start Ghidra, open a program in CodeBrowser
 2. Enable GhidraMCPPlugin (File > Configure > Developer)
-3. The MCP bridge auto-starts via the `.mcp.json` configuration
-4. `list_instances()` — shows the program name and port
-5. `use_program("<name>")` — choose it; even a single instance is not selected automatically
+3. Nothing else to start: Claude Code runs the plugin's MCP server itself, before or after Ghidra
+4. `list_instances()` — shows `program="<name>"` for the open program
+5. Pass `program="<name>"` on every call; even a single open program is not used automatically
 
-## Multi-Instance Workflow
+## Several Programs, Several Instances
 
-When analyzing multiple related binaries (e.g., a main executable and its DLLs, or a bootloader and firmware) in **separate CodeBrowser windows**:
+Any number of Ghidra instances can run, each with any number of programs open (as tabs in one CodeBrowser, or in separate windows). `list_instances()` lists every open program on every instance:
 
-1. Open each program in its own CodeBrowser window (launch another CodeBrowser from the Tool Chest; opening a program from the project window while one is running adds a tab to it instead)
-2. Each window takes the next free HTTP port (8080, 8081, 8082, ...), in boot order
-3. Discover instances:
-   ```
-   list_instances()
-   → Port 8080: main.exe (MyProject)
-   → Port 8081: helper.dll (MyProject)
-   ```
-4. Switch between them as needed:
-   ```
-   use_program("helper.dll")  # now targeting helper.dll, wherever it runs
-   decompile_function("DllMain")
-   use_program("main.exe")    # back to main.exe
-   ```
+```
+list_instances()
+→ Port 8080, project Grandia:
+    program="SLES_023.97 + FIELD.BIN"  (in front)
+    program="SLES_023.97 + BATLE.BIN"
+  Port 8081, project Lunar 2:
+    program="SLUS_012.57"  (in front)
+```
 
-## Tabs and Overlays
+- Each call names its program, in front or not, on whichever instance holds it: `decompile_function_by_address(program="SLES_023.97 + BATLE.BIN", address="0x80100000")`. The analyst switching tabs changes nothing.
+- Comparing two programs is just two calls with different `program` values.
+- If the same name is open in two projects, `list_instances()` shows `project:/path` values instead (`program="Grandia:/BATLE.BIN"`); a bare name that matches both fails with `[AMBIGUOUS]` and nothing is sent.
+- If Ghidra restarts and the program comes back on another port, the next call finds it there. If it is closed, calls fail with `[PROGRAM_NOT_FOUND]` and nothing is sent anywhere else.
+- Subagents share the same MCP server: tell each one the exact `program` value to use.
 
-Every tool acts on one program: the **active tab** of the targeted instance's window. Listings never span programs and there is no `PROGRAM::address` prefix. If a window holds several programs as tabs, switching tabs makes the bridge refuse calls until you switch back or re-select with `use_program`.
+## Overlays
 
 For dynamically loaded overlays that share a RAM range, either open each as its own program (above), or load them as **overlay memory blocks** of one program and use Ghidra's overlay address syntax:
 
@@ -291,10 +293,13 @@ Use runtime observations to guide Ghidra analysis:
 
 ## Tips
 
-- **Start broad, then narrow down**: use `list_functions()` or `search_functions_by_name()` to orient, then decompile specific targets.
+- **Start broad, then narrow down**: `get_program_info()`, then `list_functions()` (paged) or `search_functions_by_name()`, `get_function_calls(address)` for callers and callees in one call, then decompile specific targets.
+- **Find what analysis missed**: `find_code_gaps()` lists executable ranges no function covers (jump-table targets, functions only reached through pointers); `create_function` them, or `disassemble` first.
+- **Run a routine instead of reading it**: `emulate_function(address, registers={...}, memory=[...], read_memory=[...])` executes a decompressor, checksum or lookup in Ghidra's emulator and reports the result and the memory written. Calls into code outside the program (BIOS) stop the run.
+- **Overlays from files**: `create_memory_block(name, address, file_path=..., overlay=true)` adds an overlay file as an overlay block of the current program.
 - **Rename early and often**: see the Core Rule above — tentative names like `maybe_init_network` beat `FUN_00401000`, and you can always rename again.
 - **Use bookmarks** to track progress across analysis sessions. Categories help organize findings (e.g., "Crypto", "Network", "Parsing").
-- **Paginate large results**: for binaries with thousands of functions, use `offset` and `limit` to avoid timeouts.
+- **Paginate large results**: list tools end with a footer (`-- items 1-1000 of 2400; next page: offset=1000 --`) whenever there is more.
 - **Decompile after annotation**: each rename, retype, or struct application improves the decompiler output. Re-read after changes.
 - **Create functions manually**: if Ghidra didn't auto-detect a function (grayed-out code in the decompiler), right-click the entry point in the listing view and select **Create Function** (or press **F**), or call `create_function(address)`. This is common with RAM dumps or hand-written assembly. Once created, the function can be decompiled and renamed normally.
 - **Set register values for better decompilation**: some architectures use a global pointer register (e.g., `gp` on MIPS). If Ghidra can't resolve global accesses, right-click the function entry point → **Set Register Values** (CTRL+R) and provide the known register value. This disambiguates offsets and dramatically improves the decompiled output.

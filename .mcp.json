@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "ghidra-mcp": {
-      "command": "uvx",
-      "args": [
-        "--from", "git+https://github.com/sadnescity/GhidraMCP",
-        "ghidra-mcp-bridge"
-      ]
+      "command": "java",
+      "args": ["-jar", "${CLAUDE_PLUGIN_ROOT}/server/ghidra-mcp-bridge.jar"]
     }
   }
 }
