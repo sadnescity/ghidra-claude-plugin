@@ -58,7 +58,7 @@ This plugin's `.mcp.json` runs the MCP server as Claude Code's child process:
   "args": ["-jar", "${CLAUDE_PLUGIN_ROOT}/server/ghidra-mcp-bridge.jar"] } } }
 ```
 
-`ghidra-mcp-bridge.jar` is the MCP server of the GhidraMCP project (no Ghidra classes; built by `gradle bridgeJar` in the GhidraMCP repository). It speaks MCP 2026-07-28 (stateless; Claude Code picks it after a `server/discover` probe) and still answers clients that open with `initialize` (2025-11-25 and the two before). It keeps no state: it looks the named program up on every port at each call. So:
+`ghidra-mcp-bridge.jar` is the MCP server of the GhidraMCP project (no Ghidra classes; built by `gradle bridgeJar` in the GhidraMCP repository). It speaks MCP 2026-07-28 (stateless; Claude Code picks it after a `server/discover` probe) and still answers clients that open with `initialize` (2025-11-25 and 2025-06-18). It keeps no state: it looks the named program up on every port at each call. So:
 
 - **Start order does not matter.** With Ghidra closed the tools are listed anyway (from the catalog bundled in the jar) and calls answer `[NO_GHIDRA]`; open Ghidra and the next call finds it.
 - Ghidra can be closed and reopened while Claude Code runs; the program is found on whatever port it comes back on.
@@ -161,6 +161,12 @@ Instead of analyzing an executable file, you can import a raw memory dump captur
 
 ### `[PROGRAM_NOT_FOUND]` / `[NOT_HERE]`
 - The program was closed, or its Ghidra exited, or the value is misspelt. `list_instances()` shows what is open
+
+### `[BUSY]`
+- A port in 8080-8179 accepted the connection but did not answer within 1.5 s: a Ghidra that is frozen, or another program holding the port. `list_instances()` names the port. Calls are refused while it lasts, because the program might also be open there. A Ghidra merely busy with a long call still answers
+
+### `[TIMEOUT]`
+- The call ran past `--ghidra-timeout` (120 s). Ghidra was asked to stop it: emulation and decompilation stop, a write already running may still complete, so check before repeating it. For long emulations lower `max_steps`; raise the timeout in `args` if needed
 
 ### Decompiler does not start (macOS arm64)
 - Build the natives: `cd <ghidra>/support/gradle && gradle buildNatives`

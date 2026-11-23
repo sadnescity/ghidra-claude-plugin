@@ -39,7 +39,7 @@ description: "GhidraMCP reverse engineering workflows: function analysis, cross-
 
 **Save:** changes are live in Ghidra but unsaved until `save_program` (or the analyst saves). Save at natural checkpoints.
 
-## Single Instance (Default)
+## Single Program
 
 The simplest setup: one Ghidra CodeBrowser window with one program loaded.
 
@@ -295,7 +295,7 @@ Use runtime observations to guide Ghidra analysis:
 
 - **Start broad, then narrow down**: `get_program_info()`, then `list_functions()` (paged) or `search_functions_by_name()`, `get_function_calls(address)` for callers and callees in one call, then decompile specific targets.
 - **Find what analysis missed**: `find_code_gaps()` lists executable ranges no function covers (jump-table targets, functions only reached through pointers); `create_function` them, or `disassemble` first.
-- **Run a routine instead of reading it**: `emulate_function(address, registers={...}, memory=[...], read_memory=[...])` executes a decompressor, checksum or lookup in Ghidra's emulator and reports the result and the memory written. Calls into code outside the program (BIOS) stop the run.
+- **Run a routine instead of reading it**: `emulate_function(address, registers={...}, memory=[...], read_memory=[...])` executes a decompressor, checksum or lookup in Ghidra's emulator and reports the result and the memory written. Calls into code outside the program (BIOS) stop the run; `max_steps` (default 2,000,000, roughly 10-20 s) bounds it, and cancelling the call stops it.
 - **Overlays from files**: `create_memory_block(name, address, file_path=..., overlay=true)` adds an overlay file as an overlay block of the current program.
 - **Rename early and often**: see the Core Rule above — tentative names like `maybe_init_network` beat `FUN_00401000`, and you can always rename again.
 - **Use bookmarks** to track progress across analysis sessions. Categories help organize findings (e.g., "Crypto", "Network", "Parsing").

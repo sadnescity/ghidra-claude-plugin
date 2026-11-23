@@ -21,7 +21,7 @@ GhidraMCP integration for Claude Code. Provides MCP server configuration and rev
 
 - [Ghidra 12.2](https://ghidra-sre.org/) (Java 25) with the GhidraMCP extension installed (**File > Install Extensions**) and **GhidraMCPPlugin** enabled in the CodeBrowser (**File > Configure > Developer**)
 - On macOS arm64 the official Ghidra release ships no native binaries, so the decompiler will not start: build them once with `cd <ghidra>/support/gradle && gradle buildNatives`
-- A JDK 21 or newer on the `PATH` (`java -version`); the one Ghidra uses is fine. The plugin starts its own MCP server with it (`server/ghidra-mcp-bridge.jar`, ~350 KB). No Python, no SDK.
+- A JDK 21 or newer on the `PATH` (`java -version`); the one Ghidra uses is fine. The plugin starts its own MCP server with it (`server/ghidra-mcp-bridge.jar`, ~320 KB). No Python, no SDK.
 - Ghidra and Claude Code can be started in any order, and Ghidra can be restarted while Claude Code runs.
 
 ## Upstream

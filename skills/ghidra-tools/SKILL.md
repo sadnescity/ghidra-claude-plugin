@@ -18,8 +18,8 @@ description: "GhidraMCP MCP tool reference: 80 tools for binary analysis — fin
 ## Errors
 
 A failed call is an MCP error whose text starts with a code, then says what to do:
-- Finding the program (nothing was sent): `[NO_GHIDRA]`, `[PROGRAM_NOT_FOUND]`, `[AMBIGUOUS]` (a `program` value or a name matching more than one thing), `[BUSY]` (a Ghidra port did not answer in time, so the program might also be open there — retry), `[CANCELLED]` (the call was cancelled; Ghidra stops it too).
-- Reaching Ghidra: `[NOT_HERE]` (the instance no longer has that program open), `[UNREACHABLE]`, `[UNAVAILABLE]` (the CodeBrowser is closing), `[TIMEOUT]` (Ghidra was asked to stop the call: reads and emulation stop, a write already running may still complete — check before repeating it), `[OLD_PLUGIN]` / `[BAD_RESPONSE]` (update the Ghidra extension).
+- Finding the program (nothing was sent): `[NO_GHIDRA]`, `[PROGRAM_NOT_FOUND]`, `[AMBIGUOUS]` (a `program` value or a name matching more than one thing), `[BUSY]` (a Ghidra port did not answer in time, so the program might also be open there — retry).
+- Reaching Ghidra: `[NOT_HERE]` (the instance no longer has that program open), `[CANCELLED]` (the call was cancelled; Ghidra stops it too, or skips it if it had not started), `[UNREACHABLE]`, `[UNAVAILABLE]` (the CodeBrowser is closing), `[TIMEOUT]` (Ghidra was asked to stop the call: reads and emulation stop, a write already running may still complete — check before repeating it), `[OLD_PLUGIN]` / `[BAD_RESPONSE]` (update the Ghidra extension).
 - The call itself: `[MISSING_PARAMETER]` (also for a missing `program`), `[INVALID_PARAMETER]` (also for a misspelt parameter name), `[BAD_ADDRESS]`, `[FUNCTION_NOT_FOUND]`, `[NOT_FOUND]` (e.g. an unknown data type — never replaced by `int`), `[CONFLICT]` (name taken, field overlap), `[DECOMPILE_FAILED]`, `[UNSUPPORTED]`, `[FAILED]`, `[INTERNAL_ERROR]` (a bug: report it).
 A write that fails is rolled back entirely: batch tools (`set_variables`, `set_comments`, `create_label` with a list, struct members) apply all or nothing.
 
